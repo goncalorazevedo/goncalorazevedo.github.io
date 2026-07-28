@@ -31,8 +31,10 @@ site = "site"
 [markdown.highlighting]
 theme = "catppuccin-mocha"
 
-[extra]
-# Put all your custom variables here
+[extra.table_of_contents]
+show = true
+max_level = 2
+visible_on_load = false
 
 [[extra.main_menu]]
 name = "Home"
