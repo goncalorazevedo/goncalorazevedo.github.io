@@ -153,7 +153,7 @@ We just need to swap our `read` for `readOrThrow` calls. Even though this is no 
 # Deserializing
 
 Now we need to deserialize bencode dictionaries into Kotlin objects. Bencode dictionary keys allow special characters 
-(like whitespaces), so we cannot infer our dictionary keys from class field names or parameters in all situations. Users need to be 
+(and nasty whitespaces!), so we cannot infer our dictionary keys from class field names or parameters in all situations. Users need to be 
 able to "talk" to the library on how it should serialize and deserialize their instances.
 
 For this simple library I introduced an annotation that lets users specify which key will hold the field's value. Additionally 
@@ -181,7 +181,7 @@ internal fun <T: Any> deserialize(inputStream: InputStream, klass: KClass<T>): T
 }
 ```
 By inlining the deserialize function we can reify the generic user class type (because JVM erases generics type information at compile time) 
-and we are allowed to use reflection on the generic class type in our library. 
+and we are allowed to use reflection on the generic class type in our library. Another big win we can't have in Java! 
 The practical effect of this is that we can offer a smoother API for users, e.g, `deserialize<MyClass>(inputStream)` _vs_ 
  `deserialize<MyClass>(inputStream, MyClass::class)`. The `@PublishedApi` annotation is meant to hack around the fact that calling an internal function from an inlined function "should" not be legal. 
 
@@ -327,7 +327,7 @@ private fun <T: Any> resolvedSealedSubclass(obj: Map<String, *>, klass: KClass<T
     }
 }
 ```
-It's a a frail approach, it won't work if subclasses share a parameter name in their constructor declarations, 
+It's a a frail approach, it won't work if any subclasses share parameter sets (or have supersets of any other subclass),
 but it suffices for our simple use case where both types have mutually exclusive parameter sets.
 
 Serialization was left out of this article, but given it is implemented we are now ready to start torrenting!
