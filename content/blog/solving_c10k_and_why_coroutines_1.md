@@ -73,7 +73,7 @@ def handle_connection(conn: socket.socket, addr):
 
 server()
 ```
-It's simple to reason about this solution but threads are not cheap even though, for today's standards, we can likely handle 10k connections with this approach we should place ourselves in the context of the 90s, for example, a 32bit architecture with a 1MB of thread stack memory cannot address the required 10GB.
+It's simple to reason about this solution, but threads are not cheap. By today's standards we can probably handle 10k connections this way, but we should place ourselves in the context of the 90s: a 32-bit architecture with 1MB of thread stack memory cannot address the required 10GB.
 
 What is still true today, however, is that relying on OS thread scheduling for concurrency adds unnecessary overhead, switching a running thread requires a dive into kernel space and we can probably achieve our concurrency needs more efficiently in userspace, it might also be inconvenient to have threads swapped by the OS at certain points.
 
