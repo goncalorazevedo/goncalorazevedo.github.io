@@ -15,7 +15,7 @@ In 1999 (27 years ago!) Dan Kegel postulated the [C10K](https://www.kegel.com/c1
 >  It's time for web servers to handle ten thousand clients simultaneously, don't you think? After all, the web is a big place now.
 
 The C10K appears with the popularization of the internet, back then people would like their servers to cope well with this new found fame. 
-In this post series I will do a walkthrough (using Python) of servers architectures and how they "evolved" to overcome the C10K problem. 
+In this post series I will do a walkthrough (using Python) of server architectures and how they "evolved" to overcome the C10K problem. 
 
 I will be building a KV store server with a very simple wire protocol.
 If you have never come across the C10K problem and are not sure how it is solved today I highly encourage you to think about it before looking it up or reading this post. It's a fun exercise that shines a lot of light into many modern day aspects of programming.
@@ -45,7 +45,8 @@ KV: dict[str, str] = {}
 LISTEN_ADDR = ("0.0.0.0", 25000)
 
 def server():
-    sock = socket.socket()
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(LISTEN_ADDR)
     sock.listen()
     while True:
@@ -54,14 +55,16 @@ def server():
 
 def handle_connection(conn: socket.socket, addr):
     print(f"Handling connection for {addr}")
-    cmd = conn.recv(1)
+    cmd = conn.recv(3) # assume recv call always return the requested bytes for simplicity
     match cmd:
-        case b"g": # get
-            value = KV.get(conn.recv(1).decode(), "")
+        case b"get":
+            # " k" should be in the buffer
+            value = KV.get(conn.recv(2).decode()[1], "")
             conn.send(value.encode())
-        case b"s": # set
-            key = conn.recv(1).decode()
-            value = conn.recv(1).decode()
+        case b"set":
+             # " k v" should be in the buffer
+            key = conn.recv(2).decode()[1]
+            value = conn.recv(2).decode()[1]
             KV[key] = value
             conn.send(value.encode())
 
@@ -70,9 +73,9 @@ def handle_connection(conn: socket.socket, addr):
 
 server()
 ```
-It's simple to reason about this solution, but it has one problem, threads are not cheap, even though, for today's standards, we can likely handle 10k connections with this approach. However, we need to place ourselves in the context of the 90s trying to solve the C10K.
+It's simple to reason about this solution but threads are not cheap even though, for today's standards, we can likely handle 10k connections with this approach we should place ourselves in the context of the 90s, for example, a 32bit architecture with a 1MB of thread stack memory cannot address the required 10GB.
 
-What is still true today, however, is that relying on OS thread scheduling for concurrency incurs unnecessary overhead, switching a running thread requires a dive into kernel space, which is avoidable and can probably be more efficiently done in userspace, it might also be inconvenient to have the threads swapped by the OS at certain points.
+What is still true today, however, is that relying on OS thread scheduling for concurrency adds unnecessary overhead, switching a running thread requires a dive into kernel space and we can probably achieve our concurrency needs more efficiently in userspace, it might also be inconvenient to have threads swapped by the OS at certain points.
 
 Let's run this server under a PID capped cgroup to simulate 90s hardware and software limitations: 
 ```shell
@@ -121,7 +124,8 @@ def server():
     for i in range(50):
         Thread(target=worker, args=(work_queue,), daemon=True).start()
 
-    sock = socket.socket()
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(LISTEN_ADDR)
     sock.listen()
     print(f"Listening on {LISTEN_ADDR[0]}:{LISTEN_ADDR[1]}")
@@ -136,15 +140,18 @@ def worker(work_queue: queue.Queue):
 
 def handle_connection(conn: socket.socket, addr):
     print(f"Handling connection for {addr}")
-    cmd = conn.recv(1)
+    cmd = conn.recv(3) # assume recv call always return the requested bytes for simplicity
     match cmd:
-        case b"g": # get
-            value = KV.get(conn.recv(1).decode(), "")
+        case b"get":
+            # " k" should be in the buffer
+            value = KV.get(conn.recv(2).decode()[1], "")
             conn.send(value.encode())
-        case b"s": # set
-            key = conn.recv(1).decode()
-            value = conn.recv(1).decode()
+        case b"set":
+             # " k v" should be in the buffer
+            key = conn.recv(2).decode()[1]
+            value = conn.recv(2).decode()[1]
             KV[key] = value
+            conn.send(value.encode())
             conn.send(value.encode())
 
     conn.close()
@@ -157,14 +164,14 @@ This is an improvement, ignoring the unbound queue. We have solved the flaw of t
 connection and a new one arrives?
 
 ```shell
-python server.py &
+python3 server.py &
 
 for i in $(seq 1 50); do
   (nc localhost 25000 <&- &) # no input to nc, just holds connection
 done
-
-nc localhost 25000
-get a # get value from KV => infinitely waiting, all threads blocked
+```
+```shell
+printf "get a" | nc localhost 25000 # get value from KV => infinitely waiting
 ```
 It doesn't crash, but new clients aren't served. If the server was spinning the CPU at 100% then we would need to throw more metal at it, but that is not the case, the server is actually idle waiting for the messages on the connections! We need to find a more efficient solution.
 
@@ -178,7 +185,7 @@ If you know how C10K is solved this might seem crazy, but lowering the server in
 have been overkill for the web servers of the C10K era, what about the modern servers of the C10M and C10B era? People are still lowering applications into the kernel, 
 for example [Netflix FreeBSD version](https://freebsdfoundation.org/end-user-stories/netflix-case-study/) with a custom sendfile replacement, [kTLS](https://docs.kernel.org/networking/tls-offload.html) or [eBPF](https://pt.wikipedia.org/wiki/EBPF) for high performance relays and proxies.
 
-The answer to the C10K, however, didn't end up requiring that much kernel level control, the solution was centered around a **userspace event-driven non-blocking IO architecture**. 
+The answer to the C10K didn't end up requiring that much kernel level control, the solution was centered around a **userspace event-driven non-blocking IO architecture**. 
 A lot of buzzwords for sure. [Flash Web Server](https://www.usenix.org/legacy/event/usenix99/full_papers/pai/pai.pdf)
 was the closest paper from that era I could find describing this approach. 
 
@@ -190,10 +197,10 @@ Let's dissect all these buzzwords:
 The idea is that one thread does not need to be bound to a single client connection, the lifetime of the request can be broken into
 several steps, and the server can be thought of as a state machine that interleaves all requests's steps.
 If everything was CPU bound this would not be relevant, because the interleaving of different steps would just be adding overhead
-to the total computation, however, for servers, many of these steps involve IO and the possibility of blocking,
-so a thread can comfortably serve a client while another is in a blocked step of its request lifecycle. 
+to the total computation, however, for servers, many of these steps involve potential blocking on IO,
+so a thread can comfortably serve a client while another is in a blocked step of its request lifecycle. The decision on which request step to advance next is driven by events on the corresponding connections.
 
-Looking at a 90s web server, the lifecycle of a request starts with accepting a connection, reading the message, parsing the message, finding a file, sending the headers and sending the file.
+Looking at a 90s web server, the lifecycle of a request is broken into accepting a connection, reading the message, parsing the message, finding a file, sending the headers and sending the file.
 Almost all of these steps are potentially blocking.
 
 That's the theory, in the [next post](../solving-c10k-and-why-coroutines-2) I will try to implement it!
