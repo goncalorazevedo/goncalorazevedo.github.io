@@ -11,7 +11,7 @@ Notes for personal reference.
 
 First; do not(!) simply flash the image to the SD card, setup the image before plugging it in as well, for example, use `rpie-imager`: it lets you setup the hostname, add a WiFi connection, enable ssh and add your public key into most OS images. (avoid a tty with only wpa_supplicant)
 
-Second; once connected find the IP address via the Mac addresses, list [here](https://udger.com/resources/mac-address-vendor-detail?name=raspberry_pi_foundation). If none show up it might be because it's not present in the arp table or the Pie might not be connected, if that is the case analyze the router directly.
+Second; once connected find the IP address via the Mac addresses, list [here](https://udger.com/resources/mac-address-vendor-detail?name=raspberry_pi_foundation). If none show up it might be because it's not present in the arp table or the Pi might not be connected, if that is the case analyze the router directly.
 ```
 > ifconfig
 en0: ...
